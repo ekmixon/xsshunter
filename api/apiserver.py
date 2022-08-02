@@ -76,18 +76,16 @@ class BaseHandler(tornado.web.RequestHandler):
         if user_id != None:
             user = session.query( User ).filter_by( id=user_id ).first()
             if user != None:
-                message = "[" + user.username + "]" + message
+                message = f"[{user.username}]{message}"
 
-        message = "[" + self.request.remote_ip + "] " + message
+        message = f"[{self.request.remote_ip}] {message}"
 
-        if message_type == "info":
+        if message_type == "info" or message_type not in ["warn", "debug"]:
             logging.info( message )
         elif message_type == "warn":
             logging.warn( message )
-        elif message_type == "debug":
-            logging.debug( message )
         else:
-            logging.info( message )
+            logging.debug( message )
 
     def options(self):
         pass
@@ -106,16 +104,13 @@ class BaseHandler(tornado.web.RequestHandler):
     def validate_csrf_token( self ):
         csrf_token = self.get_secure_cookie( "csrf" )
 
-        if csrf_token == None:
+        if csrf_token is None:
             return True
 
         if self.request.headers.get( 'X-CSRF-Token' ) == csrf_token:
             return True
 
-        if self.get_argument( 'csrf', False ) == csrf_token:
-            return True
-
-        return False
+        return self.get_argument( 'csrf', False ) == csrf_token
 
     def validate_input( self, required_field_list, input_dict ):
         for field in required_field_list:
@@ -135,7 +130,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def get_authenticated_user( self ):
         user_id = self.get_secure_cookie( "user" )
-        if user_id == None:
+        if user_id is None:
             self.error( "You must be authenticated to perform this action!" )
         return session.query( User ).filter_by( id=user_id ).first()
 
@@ -151,8 +146,7 @@ def data_uri_to_file( data_uri ):
     """
     raw_base64 = data_uri.replace( 'data:image/png;base64,', '' )
     binary_data = a2b_base64( raw_base64 )
-    f = io.BytesIO( binary_data )
-    return f
+    return io.BytesIO( binary_data )
 
 def pprint( input_dict ):
     print json.dumps(input_dict, sort_keys=True, indent=4, separators=(',', ': '))
@@ -175,10 +169,7 @@ class GetXSSPayloadFiresHandler(BaseHandler):
         results = session.query( Injection ).filter_by( owner_id = user.id ).order_by( Injection.injection_timestamp.desc() ).limit( limit ).offset( offset )
         total = session.query( Injection ).filter_by( owner_id = user.id ).count()
 
-        return_list = []
-
-        for result in results:
-            return_list.append( result.get_injection_blob() )
+        return_list = [result.get_injection_blob() for result in results]
 
         return_dict = {
             "results": return_list,
@@ -188,11 +179,11 @@ class GetXSSPayloadFiresHandler(BaseHandler):
         self.write( json.dumps( return_dict ) )
 
 def upload_screenshot( base64_screenshot_data_uri ):
-    screenshot_filename = "uploads/xsshunter_screenshot_" + binascii.hexlify( os.urandom( 100 ) ) + ".png"
+    screenshot_filename = f"uploads/xsshunter_screenshot_{binascii.hexlify(os.urandom( 100 ))}.png"
+
     screenshot_file_handler = data_uri_to_file( base64_screenshot_data_uri )
-    local_file_handler = open( screenshot_filename, "w" ) # Async IO http://stackoverflow.com/a/13644499/1195812
-    local_file_handler.write( screenshot_file_handler.read() )
-    local_file_handler.close()
+    with open( screenshot_filename, "w" ) as local_file_handler:
+        local_file_handler.write( screenshot_file_handler.read() )
     return screenshot_filename
 
 def record_callback_in_database( callback_data, request_handler ):
@@ -262,13 +253,13 @@ class UserInformationHandler(BaseHandler):
     def get(self):
         user = self.get_authenticated_user()
         self.logit( "User grabbed their profile information" )
-        if user == None:
+        if user is None:
             return
         self.write( json.dumps( user.get_user_blob() ) )
 
     def put(self):
         user = self.get_authenticated_user()
-        if user == None:
+        if user is None:
             return
 
         user_data = json.loads(self.request.body)
@@ -323,7 +314,6 @@ class RegisterHandler(BaseHandler):
             self.write( json.dumps( return_dict ) )
             return
 
-	domain = user_data.get( "domain" )
         if session.query( User ).filter_by( domain=domain ).first() or domain in FORBIDDEN_SUBDOMAINS:
             return_dict = {
                 "success": False,
@@ -394,19 +384,25 @@ class CallbackHandler(BaseHandler):
 
         owner_user = self.get_user_from_subdomain()
 
-        if owner_user == None:
+        if owner_user is None:
             self.throw_404()
             return
 
         if "-----BEGIN PGP MESSAGE-----" in self.request.body:
             if owner_user.email_enabled:
-                self.logit( "User " + owner_user.username + " just got a PGP encrypted XSS callback, passing it along." )
+                self.logit(
+                    f"User {owner_user.username} just got a PGP encrypted XSS callback, passing it along."
+                )
+
                 send_javascript_pgp_encrypted_callback_message( self.request.body, owner_user.email )
         else:
             callback_data = json.loads( self.request.body )
             callback_data['ip'] = self.request.remote_ip
             injection_db_record = record_callback_in_database( callback_data, self )
-            self.logit( "User " + owner_user.username + " just got an XSS callback for URI " + injection_db_record.vulnerable_page )
+            self.logit(
+                f"User {owner_user.username} just got an XSS callback for URI {injection_db_record.vulnerable_page}"
+            )
+
 
             if owner_user.email_enabled:
                 send_javascript_callback_message( owner_user.email, injection_db_record )
@@ -423,12 +419,12 @@ class HomepageHandler(BaseHandler):
 
         user = self.get_user_from_subdomain()
 
-        if user == None:
+        if user is None:
             self.throw_404()
             return
 
         new_probe = probejs
-        new_probe = new_probe.replace( '[HOST_URL]', "https://" + domain )
+        new_probe = new_probe.replace('[HOST_URL]', f"https://{domain}")
         new_probe = new_probe.replace( '[PGP_REPLACE_ME]', json.dumps( user.pgp_key ) )
         new_probe = new_probe.replace( '[CHAINLOAD_REPLACE_ME]', json.dumps( user.chainload_uri ) )
         new_probe = new_probe.replace( '[COLLECT_PAGE_LIST_REPLACE_ME]', json.dumps( user.get_page_collection_path_list() ) )
@@ -477,7 +473,10 @@ class ResendInjectionEmailHandler(BaseHandler):
             self.error( "Fuck off <3" )
             return
 
-        self.logit( "User just requested to resend the injection record email for URI " + injection_db_record.vulnerable_page )
+        self.logit(
+            f"User just requested to resend the injection record email for URI {injection_db_record.vulnerable_page}"
+        )
+
 
         send_javascript_callback_message( user.email, injection_db_record )
 
@@ -501,7 +500,10 @@ class DeleteInjectionHandler(BaseHandler):
             self.error( "Fuck off <3" )
             return
 
-        self.logit( "User delted injection record with an id of " + injection_db_record.id + "(" + injection_db_record.vulnerable_page + ")")
+        self.logit(
+            f"User delted injection record with an id of {injection_db_record.id}({injection_db_record.vulnerable_page})"
+        )
+
 
         os.remove( injection_db_record.screenshot )
 
@@ -563,7 +565,10 @@ class InjectionRequestHandler( BaseHandler ):
             self.write( json.dumps( return_data ) )
             return
 
-        self.logit( "User " + owner_user.username + " just sent us an injection attempt with an ID of " + injection_request.injection_key )
+        self.logit(
+            f"User {owner_user.username} just sent us an injection attempt with an ID of {injection_request.injection_key}"
+        )
+
 
         # Replace any previous injections with the same key and owner
         session.query( InjectionRequest ).filter_by( injection_key=injection_key ).filter_by( owner_correlation_key=owner_correlation_key ).delete()
@@ -585,7 +590,7 @@ class CollectPageHandler( BaseHandler ):
         if not self.validate_input( ["page_html", "uri"], request_dict ):
             return
 
-        if user == None:
+        if user is None:
             self.throw_404()
             return
 
@@ -595,7 +600,10 @@ class CollectPageHandler( BaseHandler ):
         page.owner_id = user.id
         page.timestamp = int(time.time())
 
-        self.logit( "Received a collected page for user " + user.username + " with a URI of " + page.uri )
+        self.logit(
+            f"Received a collected page for user {user.username} with a URI of {page.uri}"
+        )
+
 
         session.add( page )
         session.commit()
@@ -619,10 +627,7 @@ class GetCollectedPagesHandler( BaseHandler ):
 
         self.logit( "User is retrieving collected pages.")
 
-        return_list = []
-
-        for result in results:
-            return_list.append( result.to_dict() )
+        return_list = [result.to_dict() for result in results]
 
         return_dict = {
             "results": return_list,
@@ -646,7 +651,10 @@ class DeleteCollectedPageHandler(BaseHandler):
             self.error( "Fuck off <3" )
             return
 
-        self.logit( "User is deleting collected page with the URI of " + collected_page_db_record.uri )
+        self.logit(
+            f"User is deleting collected page with the URI of {collected_page_db_record.uri}"
+        )
+
         collected_page_db_record = session.query( CollectedPage ).filter_by( id=str( delete_data.get( "id" ) ) ).delete()
         session.commit()
 

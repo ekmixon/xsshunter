@@ -26,12 +26,9 @@ class Injection(Base):
 
     def get_injection_blob( self ):
         exposed_attributes = [ "id", "vulnerable_page", "victim_ip", "referer", "user_agent", "cookies", "dom", "origin", "screenshot", "injection_timestamp", "correlated_request", "browser_time" ]
-        return_dict = {}
-
-        for attribute in exposed_attributes:
-            return_dict[ attribute ] = getattr( self, attribute )
-
-        return return_dict
+        return {
+            attribute: getattr(self, attribute) for attribute in exposed_attributes
+        }
 
     def __str__( self ):
         return self.vulnerable_page

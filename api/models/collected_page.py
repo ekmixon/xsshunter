@@ -20,12 +20,9 @@ class CollectedPage(Base):
 
     def to_dict( self ):
         exposed_attributes = [ "uri", "id", "page_html", "timestamp" ]
-        return_dict = {}
-
-        for attribute in exposed_attributes:
-            return_dict[ attribute ] = getattr( self, attribute )
-
-        return return_dict
+        return {
+            attribute: getattr(self, attribute) for attribute in exposed_attributes
+        }
 
     def __str__( self ):
         return self.id

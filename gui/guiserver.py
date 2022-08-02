@@ -65,7 +65,7 @@ def make_app():
 
 if __name__ == "__main__":
     DOMAIN = settings["domain"]
-    API_SERVER = "https://api." + DOMAIN
+    API_SERVER = f"https://api.{DOMAIN}"
     app = make_app()
     app.listen( 1234 )
     tornado.ioloop.IOLoop.current().start()

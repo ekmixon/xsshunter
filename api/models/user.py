@@ -59,7 +59,7 @@ class User(Base):
         set_domain = str( set_domain ).strip()
         domain_exists = session.query( User ).filter_by( domain=set_domain ).first()
 
-        if domain_exists == None:
+        if domain_exists is None:
             self.domain = set_domain
             return True
         return False
@@ -100,7 +100,7 @@ class User(Base):
             return self.set_page_collection_paths_list( value )
 
     def get_page_collection_path_list( self ):
-        if self.page_collection_paths_list == None:
+        if self.page_collection_paths_list is None:
             return []
 
         tmp_pages_list = self.page_collection_paths_list.split( "\n" )
@@ -115,12 +115,9 @@ class User(Base):
 
     def get_user_blob( self ):
         exposed_attributes = [ "full_name", "email", "username", "pgp_key", "domain", "email_enabled", "chainload_uri", "owner_correlation_key", "page_collection_paths_list" ]
-        return_dict = {}
-
-        for attribute in exposed_attributes:
-            return_dict[ attribute ] = getattr( self, attribute )
-
-        return return_dict
+        return {
+            attribute: getattr(self, attribute) for attribute in exposed_attributes
+        }
 
     def generate_user_id( self ):
         self.id = binascii.hexlify(os.urandom(50))
@@ -141,4 +138,4 @@ class User(Base):
         return bcrypt.hashpw( str( input_string ), bcrypt.gensalt( 10 ) )
 
     def __str__(self):
-        return self.username + " - ( " + self.full_name + " )"
+        return f"{self.username} - ( {self.full_name} )"

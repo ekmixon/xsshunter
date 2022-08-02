@@ -22,12 +22,9 @@ class InjectionRequest(Base):
 
     def get_injection_blob( self ):
         exposed_attributes = [ "request", "injection_key" ]
-        return_dict = {}
-
-        for attribute in exposed_attributes:
-            return_dict[ attribute ] = getattr( self, attribute )
-
-        return return_dict
+        return {
+            attribute: getattr(self, attribute) for attribute in exposed_attributes
+        }
 
     def __str__( self ):
         return self.id
